@@ -1,0 +1,11 @@
+# env files (can opt-in for committing if needed)
+.env*
+
+# venv
+.venv/
+
+# ollama models
+ollama/
+
+# ollama models
+ollama/
