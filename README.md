@@ -34,7 +34,7 @@ This project provides a comprehensive dashboard for analyzing questionnaire data
 
 4. Configure the API endpoint by creating a `.env` file:
    ```
-   POLLS_API_ENDPOINT=https://inc-citizen.cabinex.co.ke/api/v1/sub_module_data/sub-module/16
+   POLLS_API_ENDPOINT=https://backend
    ```
 
 ## Usage
