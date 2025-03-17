@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Iterator, Optional, List, Dict, Any, Tuple
 from collections import Counter, defaultdict
 
+import dotenv
+
 # Add the parent directory to the Python path to make imports work
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,6 +22,12 @@ import requests
 # Import questionnaire models
 from data.questionnaire_model import User, QuestionDependency, QuestionField, SubModule, Response, QuestionnaireData, SubModuleResponse
 
+# .env variables
+dotenv.load_dotenv()
+
+# AI endpoint
+AI_ENDPOINT = os.getenv("AI_ENDPOINT")
+
 class AnalysisResult(BaseModel):
     """Model for analysis results of questionnaire data"""
     category: str  # e.g. 'age', 'gender', 'location'
@@ -32,7 +40,7 @@ class PollsAnalysisWorkflow(Workflow):
     
     # Agent for retrieving and processing data
     data_retrieval_agent: Agent = Agent(
-        model=Ollama(id="llama3.1:8b", host="http://localhost:11434"),
+        model=Ollama(id="llama3.1:8b", host=AI_ENDPOINT),
         instructions=[
             "You are an agent responsible for retrieving and processing questionnaire data in Kenya.",
             "You will fetch data from an API endpoint and organize it for analysis.",
@@ -47,7 +55,7 @@ class PollsAnalysisWorkflow(Workflow):
     
     # Agent for analyzing data by demographics
     data_analysis_agent: Agent = Agent(
-        model=Ollama(id="llama3.1:8b", host="http://localhost:11434"),
+        model=Ollama(id="llama3.1:8b", host=AI_ENDPOINT),
         instructions=[
             "You are an agent responsible for analyzing questionnaire data by demographic categories in Kenya.",
             "You will be provided with questionnaire responses organized by user demographics.",
@@ -89,7 +97,7 @@ class PollsAnalysisWorkflow(Workflow):
     
     # Agent for generating insights and recommendations
     insights_agent: Agent = Agent(
-        model=Ollama(id="llama3.1:8b", host="http://localhost:11434"),
+        model=Ollama(id="llama3.1:8b", host=AI_ENDPOINT),
         instructions=[
             "You are an agent responsible for generating insights from analyzed questionnaire data in Kenya.",
             "You will be provided with analysis results broken down by demographic categories.",

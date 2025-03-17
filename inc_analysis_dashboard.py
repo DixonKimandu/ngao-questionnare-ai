@@ -740,13 +740,27 @@ def main():
     # Initialize session state
     if 'analyzed_questions' not in st.session_state:
         st.session_state.analyzed_questions = {}
+    
+    # Initialize API endpoint in session state if not already there
+    if 'api_endpoint' not in st.session_state:
+        st.session_state.api_endpoint = API_ENDPOINT
         
     # Simple sidebar with info about the data source
     with st.sidebar:
         st.title("Data Source")
+        # Add API endpoint input
+        api_endpoint = st.text_input(
+            "API Endpoint",
+            value=st.session_state.api_endpoint,
+            help="Enter the API endpoint URL for fetching questionnaire data",
+            key="endpoint_input"
+        )
         
-        # Add refresh button
-        if st.button("Refresh Data"):
+        # Add refresh button with endpoint update logic
+        if st.button("Update & Refresh Data"):
+            # Update the endpoint in session state
+            st.session_state.api_endpoint = api_endpoint
+            # Clear caches to force data refresh
             st.cache_data.clear()
             st.cache_resource.clear()
             st.session_state.last_fetch_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -755,6 +769,7 @@ def main():
         # Add environment info
         st.markdown("---")
         st.subheader("Environment")
+        st.text(f"Current endpoint: {st.session_state.api_endpoint}")
         st.text(f"Cache timeout: {CACHE_TIMEOUT // 3600} hours")
         
         # Show last data fetch time
@@ -764,11 +779,11 @@ def main():
     # Auto-load data on startup using cached functions
     with st.spinner("Loading data..."):
         try:
-            # Get data from cache or fetch new data
-            results, analysis_results, responses = fetch_and_analyze_data(API_ENDPOINT)
+            # Get data from cache or fetch new data using the endpoint from session state
+            results, analysis_results, responses = fetch_and_analyze_data(st.session_state.api_endpoint)
             
             # Get the workflow object separately from cache
-            workflow = create_workflow(API_ENDPOINT)
+            workflow = create_workflow(st.session_state.api_endpoint)
             
             # Store last fetch time if not set
             if 'last_fetch_time' not in st.session_state:
