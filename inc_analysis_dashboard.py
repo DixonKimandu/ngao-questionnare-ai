@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from inc_polls_analysis_agent import PollsAnalysisWorkflow, AnalysisResult
 
 # Get API endpoint from environment variable with fallback
-DEFAULT_API_ENDPOINT = "https://incapidev.reflow.co.ke/api/v2/fetchsurveydata/16"
+DEFAULT_API_ENDPOINT = "https://inc-citizen.cabinex.co.ke/api/v1/sub_module_data/sub-module/16"
 API_ENDPOINT = os.environ.get("POLLS_API_ENDPOINT", DEFAULT_API_ENDPOINT)
 
 # Define cache timeout (4 hours in seconds)
