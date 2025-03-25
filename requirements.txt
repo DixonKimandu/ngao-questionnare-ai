@@ -12,12 +12,18 @@ plotly>=5.13.0
 # Streamlit for dashboard
 streamlit>=1.22.0
 
+# Database connectivity
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.5
+
+# Scheduling for cron job
+schedule>=1.1.0
+
 # Agno framework (assuming this is a pip-installable package)
 agno>=0.1.0
 
-# Additional dependencies that may be needed
-PyYAML>=6.0
-SQLAlchemy>=2.0.0  # For SqliteWorkflowStorage 
-
 # AI models
 ollama>=0.1.0
+
+# PDF report generation
+reportlab>=3.6.0

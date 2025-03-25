@@ -1,5 +1,5 @@
 # env files (can opt-in for committing if needed)
-.env*
+.env
 
 # venv
 .venv/
@@ -9,3 +9,12 @@ ollama/
 
 # ollama models
 ollama/
+
+# reports
+reports/
+
+# Ignore log files
+logs/*.log
+
+# Ignore secrets files
+.streamlit/secrets.toml

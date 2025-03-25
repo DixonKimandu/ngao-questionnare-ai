@@ -1,0 +1,101 @@
+services:
+  # PostgreSQL database service
+  postgres:
+    image: postgres:latest
+    container_name: ${PROJECT_NAME}-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Adminer for database management
+  adminer:
+    image: adminer
+    container_name: ${PROJECT_NAME}-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Ollama for LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ${PROJECT_NAME}-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Pull models at startup
+    command: >
+      sh -c "ollama serve &
+             sleep 10 &&
+             ollama pull llama2 &&
+             wait"
+
+  # Main Streamlit dashboard application
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: ${PROJECT_NAME}-dashboard
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./reports:/app/reports
+    ports:
+      - "8501:8501"
+    environment:
+      - BASE_URL=${BASE_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - postgres
+      - ollama
+    restart: unless-stopped
+    command: streamlit run questionnaire_analysis.py
+
+  # Background data fetcher service
+  fetcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.fetcher
+    container_name: ${PROJECT_NAME}-fetcher
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - BASE_URL=${BASE_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - OLLAMA_HOST=http://ollama:11434
+      - INTERVAL_MINUTES=10
+      - BATCH_SIZE=100
+      - LOG_LEVEL=INFO
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    command: python cron/fetch_cron.py
+
+volumes:
+  postgres_data:
+  ollama_data: 

@@ -25,12 +25,17 @@ st.set_page_config(
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import the polls analysis workflow
-from inc_polls_analysis_agent import PollsAnalysisWorkflow, AnalysisResult
+from agents.inc_polls_analysis_agent import PollsAnalysisWorkflow
+
+# Get URL parameters
+# query_params = st.query_params()
+
+SUBMODULE_ID = st.query_params["subModule_id"]
 
 # Get API endpoint from environment variable with fallback
-DEFAULT_API_ENDPOINT = "https://inc-citizen.cabinex.co.ke/api/v1/sub_module_data/sub-module/16"
-API_ENDPOINT = os.environ.get("POLLS_API_ENDPOINT", DEFAULT_API_ENDPOINT)
-
+DEFAULT_API_ENDPOINT = f"https://inc-citizen.cabinex.co.ke/api/v1/sub_module_data/sub-module"
+POLLS_API_ENDPOINT = os.environ.get("POLLS_API_ENDPOINT", DEFAULT_API_ENDPOINT)
+API_ENDPOINT = f"{POLLS_API_ENDPOINT}/{SUBMODULE_ID}"
 # Define cache timeout (4 hours in seconds)
 CACHE_TIMEOUT = 4 * 60 * 60
 
