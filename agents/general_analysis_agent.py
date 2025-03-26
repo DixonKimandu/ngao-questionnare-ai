@@ -16,6 +16,7 @@ import tempfile
 import pandas as pd
 from io import StringIO
 import dotenv
+from typing import Iterator, Optional, Dict, List, Any
 
 # .env variables
 dotenv.load_dotenv()
@@ -23,10 +24,12 @@ dotenv.load_dotenv()
 # AI endpoint
 AI_ENDPOINT = os.getenv("AI_ENDPOINT")
 
-class GeneralAnalysis(BaseModel):
-    sentiment: str = Field(description="The sentiment of the data")
-    analysis: str = Field(description="The analysis of the data")
-    conclusion: str = Field(description="The conclusion of the analysis")
+class AnalysisResult(BaseModel):
+    """Model for analysis results of questionnaire data"""
+    category: str  # e.g. 'age', 'gender', 'location'
+    question_id: Optional[str] = None  # None for general analysis
+    segments: Dict[str, int]  # e.g. {'18-24': 45, '25-34': 32, ...}
+    insights: str
 
 class GeneralAnalysisWorkflow(Workflow):
 
@@ -141,6 +144,156 @@ class GeneralAnalysisWorkflow(Workflow):
         data_str = json.dumps(formatted_data, default=str)
 
         return data_str
+    
+    def categorize_by_age(self, responses_data: str) -> Dict[str, List[Dict]]:
+        """Categorize responses by age groups using direct date_of_birth field"""
+        # Convert JSON string to list of dictionaries if needed
+        if isinstance(responses_data, str):
+            responses = json.loads(responses_data)
+        else:
+            responses = responses_data
+        
+        age_groups = {
+            "under_18": [],
+            "18-35": [],
+            "36-65": [],
+            "66+": [],
+            "unknown": []
+        }
+        
+        for response in responses:
+            # Check if there's a date_of_birth directly in the response
+            if response.get('date_of_birth'):
+                # Calculate age from date_of_birth
+                try:
+                    dob_str = response.get('date_of_birth')
+                    # Handle different date formats
+                    if 'T' in dob_str and ('Z' in dob_str or '+' in dob_str):
+                        # This is an ISO format with timezone info
+                        from datetime import timezone
+                        
+                        # Replace Z with +00:00 for proper ISO parsing
+                        if 'Z' in dob_str:
+                            dob_str = dob_str.replace('Z', '+00:00')
+                        
+                        # Parse as timezone-aware datetime
+                        dob = datetime.fromisoformat(dob_str)
+                        
+                        # Make sure we compare with timezone-aware datetime.now()
+                        now = datetime.now(timezone.utc)
+                    elif 'T' in dob_str:
+                        # ISO format without timezone - treat as UTC
+                        dob = datetime.fromisoformat(dob_str)
+                        # Make current time naive for consistency
+                        now = datetime.now()
+                    else:
+                        # Try different formats for non-ISO dates
+                        formats = ['%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%Y/%m/%d']
+                        for fmt in formats:
+                            try:
+                                dob = datetime.strptime(dob_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        else:
+                            # If no format works, put in unknown
+                            age_groups["unknown"].append(response)
+                            continue
+                        
+                        # Use naive datetime for non-ISO formats
+                        now = datetime.now()
+                    
+                    # Calculate age
+                    age = (now - dob).days // 365
+                    
+                    # Categorize by age
+                    if age < 18:
+                        age_groups["under_18"].append(response)
+                    elif age < 36:
+                        age_groups["18-35"].append(response)
+                    elif age < 66:
+                        age_groups["36-65"].append(response)
+                    else:
+                        age_groups["66+"].append(response)
+                except Exception as e:
+                    print(f"Error parsing date of birth '{dob_str}': {str(e)}")
+                    age_groups["unknown"].append(response)
+            else:
+                # If no DOB in response, put in unknown
+                age_groups["unknown"].append(response)
+        
+        return age_groups
+    
+    def categorize_by_gender(self, responses_data: str) -> Dict[str, List[Dict]]:
+        """Categorize responses by gender using direct gender field"""
+        # Convert JSON string to list of dictionaries if needed
+        if isinstance(responses_data, str):
+            responses = json.loads(responses_data)
+        else:
+            responses = responses_data
+        
+        gender_groups = {
+            "male": [],
+            "female": [],
+            "other": [],
+            "unknown": []
+        }
+        
+        for response in responses:
+            # Get gender directly from the response
+            if response.get('gender'):
+                gender = response.get('gender', '').lower()
+                if gender == 'male':
+                    gender_groups["male"].append(response)
+                elif gender in ['female', 'femal']: # handle possible typo
+                    gender_groups["female"].append(response)
+                else:
+                    gender_groups["other"].append(response)
+            else:
+                # If no gender info, add to unknown
+                gender_groups["unknown"].append(response)
+        
+        return gender_groups
+    
+    def categorize_by_location(self, responses_data: str) -> Dict[str, List[Dict]]:
+        """Categorize responses by location using direct location field"""
+        # Convert JSON string to list of dictionaries if needed
+        if isinstance(responses_data, str):
+            responses = json.loads(responses_data)
+        else:
+            responses = responses_data
+        
+        location_groups = {}
+        
+        for response in responses:
+            # Get location directly from the response
+            location = response.get('location')
+            
+            # If no location found, use 'Unknown'
+            if not location:
+                location = "Unknown"
+            
+            # Add to appropriate group
+            if location not in location_groups:
+                location_groups[location] = []
+            
+            location_groups[location].append(response)
+        
+        return location_groups
+    
+    def generate_final_insights(self, data) -> str:
+        """Generate final insights based on all analysis results"""
+        
+        agent_input = {
+            "analysis_results": [result.dict() for result in self.analysis_results],
+            "total_responses": len(data)
+        }
+        
+        response = self.insights_agent.run(
+            json.dumps(agent_input, indent=2)
+        )
+        
+        return response.content
     
     def generate_report_pdf(self, final_response, data=None):
         # Import necessary libraries
@@ -354,8 +507,6 @@ class GeneralAnalysisWorkflow(Workflow):
                 
                 # Show total respondents
                 summary_data.append(["Total Respondents", str(len(unique_respondents_df))])
-                if len(unique_respondents_df) != len(df):
-                    summary_data.append(["Total Records", str(len(df))])
                 
                 # Add gender counts (specifically male and female)
                 if 'gender' in unique_respondents_df.columns:
@@ -390,8 +541,8 @@ class GeneralAnalysisWorkflow(Workflow):
                 # Add location information from unique respondents
                 if 'location' in unique_respondents_df.columns:
                     # Count unique locations
-                    unique_locations = unique_respondents_df['location'].nunique()
-                    summary_data.append(["Unique Locations", str(unique_locations)])
+                    # unique_locations = unique_respondents_df['location'].nunique()
+                    # summary_data.append(["Unique Locations", str(unique_locations)])
                     
                     # Top 3 locations by number of respondents
                     top_locations = unique_respondents_df['location'].value_counts().head(3)
@@ -559,8 +710,19 @@ class GeneralAnalysisWorkflow(Workflow):
         flowables.append(analysis_heading)
         flowables.append(Spacer(1, 12))
         
+        # Check if final_response is a dictionary or RunResponse object
+        if hasattr(final_response, 'content'):
+            # It's a RunResponse object
+            content_text = final_response.content
+        elif isinstance(final_response, dict) and 'final_insights' in final_response:
+            # It's a dictionary with final_insights key
+            content_text = final_response.get('final_insights', '')
+        else:
+            # Fallback for other dictionary formats
+            content_text = str(final_response)
+        
         # Split the content into paragraphs
-        content_parts = final_response.content.split('\n')
+        content_parts = content_text.split('\n')
         
         # Add the content
         for part in content_parts:
@@ -589,7 +751,7 @@ class GeneralAnalysisWorkflow(Workflow):
         print(f"Report saved to: {pdf_file}")
         return pdf_file
 
-    def run(self):
+    def run(self) -> Iterator[RunResponse]:
         try:
             # Get all the data from the database
             data = self.fetch_data()
@@ -597,6 +759,54 @@ class GeneralAnalysisWorkflow(Workflow):
             # Convert data to a string representation
             # Create a list of dictionaries from row objects
             formatted_data = self.format_data(data)
+
+                        # Initialize results list
+            self.analysis_results = []
+            
+            # Step 1: Categorize responses by demographics
+            print("  Categorizing responses by age...")
+            age_groups = self.categorize_by_age(formatted_data)
+            print("  Categorizing responses by gender...")
+            gender_groups = self.categorize_by_gender(formatted_data)
+            print("  Categorizing responses by location...")
+            location_groups = self.categorize_by_location(formatted_data)
+            
+            # Step 2: Analyze demographic distribution
+            print("  Analyzing demographic distribution...")
+            
+            # Age distribution
+            age_distribution = AnalysisResult(
+                category="age",
+                question_id=None,
+                segments={group: len(responses) for group, responses in age_groups.items()},
+                insights=self.data_analysis_agent.run(
+                    f"Analyze the age distribution of respondents: {json.dumps({group: len(responses) for group, responses in age_groups.items()})}"
+                ).content
+            )
+            self.analysis_results.append(age_distribution)
+            
+            # Gender distribution
+            gender_distribution = AnalysisResult(
+                category="gender",
+                question_id=None,
+                segments={group: len(responses) for group, responses in gender_groups.items()},
+                insights=self.data_analysis_agent.run(
+                    f"Analyze the gender distribution of respondents: {json.dumps({group: len(responses) for group, responses in gender_groups.items()})}"
+                ).content
+            )
+            self.analysis_results.append(gender_distribution)
+            
+            # Location distribution
+            location_distribution = AnalysisResult(
+                category="location",
+                question_id=None,
+                segments={group: len(responses) for group, responses in location_groups.items()},
+                insights=self.data_analysis_agent.run(
+                    f"Analyze the location distribution of respondents: {json.dumps({group: len(responses) for group, responses in location_groups.items()})}"
+                ).content
+            )
+            self.analysis_results.append(location_distribution)
+
            
             # Data analysis
             data_analysis_response = self.data_analysis_agent.run(formatted_data)
@@ -608,23 +818,27 @@ class GeneralAnalysisWorkflow(Workflow):
             # Extract just the content from the RunResponse
             insights_content = insights_response.content
 
+            print("Compiling the final report...")
+            final_insights = self.generate_final_insights(data)
 
-            # Compile the final report
-            final_response: RunResponse = self.report_generation.run(
-                json.dumps(
-                    {
-                        "data_analysis": data_analysis_content,
-                        "data_insights": insights_content,
-                    },
-                    indent=4,
-                )
-            )
+            # Prepare results
+            result_summary = {
+                "total_responses": len(data),
+                # "questions": sorted(list(questions.keys())),  # Include the list of questions
+                "demographic_analysis": {
+                    "age": self.analysis_results[0].segments if len(self.analysis_results) > 0 else {},
+                    "gender": self.analysis_results[1].segments if len(self.analysis_results) > 1 else {},
+                    "location": self.analysis_results[2].segments if len(self.analysis_results) > 2 else {}
+                },
+                # "question_analysis_count": 0,  # Start with 0 since we're doing on-demand analysis
+                "final_insights": final_insights
+            }
 
             # Generate the report in PDF format
-            self.generate_report_pdf(final_response, data)
+            self.generate_report_pdf(result_summary, data)
 
             yield RunResponse(
-                content=final_response.content, event=RunEvent.workflow_completed
+                content=result_summary, event=RunEvent.workflow_completed
             )
 
         except Exception as e:
@@ -649,5 +863,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
