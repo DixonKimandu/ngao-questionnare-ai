@@ -21,15 +21,15 @@ try:
 except FileNotFoundError:
     # Default configuration if file not found
     config = {
-        "BASE_URL": os.getenv("BASE_URL", "https://inc-citizen.cabinex.co.ke"),
+        "BASE_URL": os.getenv("BASE_URL"),
         "BATCH_SIZE": 100,
         "INTERVAL_MINUTES": 60,
         "CURSOR_FILE": os.path.join(parent_dir, "data", "last_cursor.json"),
-        "POSTGRES_USER": os.getenv("POSTGRES_USER", "ollama"),
-        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", "ollama"),
-        "POSTGRES_HOST": os.getenv("POSTGRES_HOST", "192.168.100.46"),
-        "POSTGRES_PORT": os.getenv("POSTGRES_PORT", "5432"),
-        "POSTGRES_DB": os.getenv("POSTGRES_DB", "ollama"),
+        "POSTGRES_USER": os.getenv("POSTGRES_USER"),
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "POSTGRES_HOST": os.getenv("POSTGRES_HOST"),
+        "POSTGRES_PORT": os.getenv("POSTGRES_PORT"),
+        "POSTGRES_DB": os.getenv("POSTGRES_DB"),
         "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO")
     }
 
@@ -40,6 +40,16 @@ logger = setup_logger("fetch_cron", log_dir, log_level)
 
 if not os.path.exists(os.path.join(parent_dir, "config.json")):
     logger.warning("Config file not found. Using default configuration.")
+
+# After loading config, add this debugging section
+logger.info("Environment variable values:")
+logger.info(f"BASE_URL from env: {os.getenv('BASE_URL')}")
+logger.info(f"POSTGRES_USER from env: {os.getenv('POSTGRES_USER')}")
+logger.info(f"POSTGRES_PASSWORD from env: {os.getenv('POSTGRES_PASSWORD')}")
+logger.info(f"POSTGRES_HOST from env: {os.getenv('POSTGRES_HOST')}")
+logger.info(f"POSTGRES_PORT from env: {os.getenv('POSTGRES_PORT')}")
+logger.info(f"POSTGRES_DB from env: {os.getenv('POSTGRES_DB')}")
+logger.info(f"LOG_LEVEL from env: {os.getenv('LOG_LEVEL')}")
 
 # Function to fetch data from API with cursor support
 def fetch_data_with_cursor(cursor=None, batch_size=100):
@@ -134,10 +144,22 @@ def fetch_data_with_cursor(cursor=None, batch_size=100):
                 user_data = response.get('user', {})
                 iprs_data = user_data.get('iprs', {})
                 sub_module_data = response.get('sub_module', {})
-                id_no = iprs_data.get('id_no')
-                gender = iprs_data.get('gender')
-                dob = iprs_data.get('date_of_birth')
-                location = iprs_data.get('district_of_birth') if iprs_data.get('district_of_birth') else iprs_data.get('county_of_birth') if iprs_data.get('county_of_birth') else iprs_data.get('division_of_birth') if iprs_data.get('division_of_birth') else iprs_data.get('location_of_birth') if iprs_data.get('location_of_birth') else None
+                id_no = iprs_data.get('id_no') if iprs_data else ''
+                gender = iprs_data.get('gender') if iprs_data else ''
+                dob = iprs_data.get('date_of_birth') if iprs_data else ''
+
+                # Fix the location logic
+                location = ''
+                if iprs_data:
+                    if iprs_data.get('district_of_birth'):
+                        location = iprs_data.get('district_of_birth')
+                    elif iprs_data.get('county_of_birth'):
+                        location = iprs_data.get('county_of_birth')
+                    elif iprs_data.get('division_of_birth'):
+                        location = iprs_data.get('division_of_birth')
+                    elif iprs_data.get('location_of_birth'):
+                        location = iprs_data.get('location_of_birth')
+
                 name = sub_module_data.get('name')
                 description = sub_module_data.get('description')
 
@@ -289,7 +311,7 @@ def initialize_database():
     try:
         # Create database URL
         db_url = f"postgresql://{config['POSTGRES_USER']}:{config['POSTGRES_PASSWORD']}@{config['POSTGRES_HOST']}:{config['POSTGRES_PORT']}/{config['POSTGRES_DB']}"
-        
+
         # Create SQLAlchemy engine
         engine = create_engine(db_url)
         
@@ -393,6 +415,7 @@ def job():
     try:
         end_time = datetime.now()
         db_url = f"postgresql://{config['POSTGRES_USER']}:{config['POSTGRES_PASSWORD']}@{config['POSTGRES_HOST']}:{config['POSTGRES_PORT']}/{config['POSTGRES_DB']}"
+
         engine = create_engine(db_url)
         
         with engine.connect() as conn:
