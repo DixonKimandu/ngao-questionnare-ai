@@ -14,7 +14,31 @@ This project provides a comprehensive dashboard for analyzing questionnaire data
 - **Caching System**: Efficient data caching to improve dashboard performance
 - **Background Data Synchronization**: Cron job service to keep database updated with latest responses
 
+## Project Structure
+
+- `docker-compose.yml`: Docker Compose configuration for containerized deployment
+- `Dockerfile`: Docker configuration for the dashboard application
+
+## Requirements
+
+### For Local Installation:
+- Python 3.8+
+- PostgreSQL database
+- Streamlit
+- Pandas
+- Plotly
+- SQLAlchemy
+- Pydantic
+- Agno (for AI agent workflow)
+- Ollama (for local LLM inference)
+
+### For Docker Deployment:
+- Docker
+- Docker Compose
+
 ## Installation
+
+### Option 1: Local Installation
 
 1. Clone the repository:
    ```bash
@@ -33,16 +57,50 @@ This project provides a comprehensive dashboard for analyzing questionnaire data
    pip install -r requirements.txt
    ```
 
-4. Configure the environment by creating a `.env` file based on `.env.example`:
+### Option 2: Docker Deployment
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/questionnaire-analysis-dashboard.git
+   cd questionnaire-analysis-dashboard
    ```
-   BASE_URL=https://inc-citizen.cabinex.co.ke
-   POSTGRES_DB=assistant
-   POSTGRES_USER=assistant
-   POSTGRES_PASSWORD=assistant
-   POSTGRES_HOST=192.168.1.37
-   POSTGRES_PORT=5432
-   OLLAMA_HOST=http://192.168.1.37:11434
+
+2. Build and run using Docker Compose:
+   ```bash
+   docker-compose up -d
    ```
+
+   This will start:
+   - The main dashboard application
+   - PostgreSQL database
+   - Background data fetcher service
+   - Ollama LLM service
+
+3. Access the dashboard at `http://localhost:8501`
+
+## Configuration
+
+Configure the environment by creating a `.env` file based on `.env.example`:
+```
+BASE_URL=""
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_HOST=192.168.1.xx
+POSTGRES_PORT=5432
+OLLAMA_HOST=http://192.168.1.xx:11434
+```
+
+b. Configure the environment by creating a `.streamlit.toml` file based on `.streamlit.example.toml`:
+```
+BASE_URL=
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_HOST=192.168.1.xx
+POSTGRES_PORT=5432
+OLLAMA_HOST=http://192.168.1.xx:11434
+```
 
 ## Usage
 
@@ -52,94 +110,3 @@ Run the Streamlit dashboard:
 ```bash
 streamlit run questionnaire_analysis.py
 ```
-
-The dashboard will open in your default web browser at `http://localhost:8501`.
-
-### Background Data Fetcher
-
-Set up the background data fetcher to run as a service:
-
-1. Run manually once:
-   ```bash
-   python cron/fetch_cron.py --run-once
-   ```
-
-2. Run as a scheduled job:
-   ```bash
-   python cron/fetch_cron.py
-   ```
-
-3. Set up as a system service (Linux):
-   ```bash
-   # Create a systemd service file
-   sudo nano /etc/systemd/system/questionnaire-fetcher.service
-   
-   # Add the following content
-   [Unit]
-   Description=Questionnaire Data Fetcher Service
-   After=network.target
-
-   [Service]
-   User=your_username
-   WorkingDirectory=/path/to/questionnaire-analysis-dashboard
-   ExecStart=/path/to/questionnaire-analysis-dashboard/.venv/bin/python cron/fetch_cron.py
-   Restart=always
-   RestartSec=5
-
-   [Install]
-   WantedBy=multi-user.target
-   
-   # Enable and start the service
-   sudo systemctl enable questionnaire-fetcher.service
-   sudo systemctl start questionnaire-fetcher.service
-   ```
-
-## Project Structure
-
-- `questionnaire_analysis.py`: Main Streamlit dashboard application
-- `cron/fetch_cron.py`: Background service for data synchronization
-- `data/questionnaire_model.py`: Pydantic models for data validation
-- `logs/`: Directory for application logs
-- `reports/`: Generated PDF reports
-- `.env`: Configuration file for API endpoints and database
-
-## Requirements
-
-- Python 3.8+
-- PostgreSQL database
-- Streamlit
-- Pandas
-- Plotly
-- SQLAlchemy
-- Pydantic
-- Agno (for AI agent workflow)
-- Ollama (for local LLM inference)
-
-## How It Works
-
-1. The `fetch_cron.py` service periodically fetches new questionnaire data from the API
-2. Data is stored in a PostgreSQL database, avoiding duplicates
-3. The Streamlit dashboard connects to the database to visualize the data
-4. Responses are categorized by demographic segments (age, gender, location)
-5. Users can select specific questions for detailed analysis
-6. AI agents generate insights about patterns and trends in the data
-7. The dashboard can export data as CSV or generate PDF reports
-
-## AI Analysis Components
-
-The system uses specialized AI agents:
-- **Data Retrieval Agent**: Handles fetching and processing raw data
-- **Data Analysis Agent**: Analyzes trends by demographic categories
-- **General Analysis Agent**: Generates reports with high-level insights and recommendations
-
-## Customization
-
-You can customize the API endpoint and database connection by modifying the `.env` file. The dashboard also supports different LLM backends by modifying the Ollama host configuration.
-
-## License
-
-[Specify your license here]
-
-## Contributors
-
-[List contributors here] 

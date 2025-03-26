@@ -13,7 +13,12 @@ import plotly.express as px
 st.set_page_config(layout="wide")
 
 # Get API endpoint from environment variable with fallback
-BASE_URL = st.secrets.BASE_URL
+try:
+    BASE_URL = st.secrets["BASE_URL"]  # Access directly as dictionary key
+except Exception as e:
+    st.warning(f"BASE_URL not found in secrets. Using default value. Error: {str(e)}")
+    BASE_URL = "http://localhost:8000"  # Default fallback value
+
 # Define cache timeout (4 hours in seconds)
 CACHE_TIMEOUT = 4 * 60 * 60
 
