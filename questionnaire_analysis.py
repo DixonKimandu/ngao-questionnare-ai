@@ -13,12 +13,7 @@ import plotly.express as px
 st.set_page_config(layout="wide")
 
 # Get API endpoint from environment variable with fallback
-try:
-    BASE_URL = st.secrets["BASE_URL"]  # Access directly as dictionary key
-except Exception as e:
-    st.warning(f"BASE_URL not found in secrets. Using default value. Error: {str(e)}")
-    BASE_URL = "http://localhost:8000"  # Default fallback value
-
+BASE_URL = st.secrets.BASE_URL
 # Define cache timeout (4 hours in seconds)
 CACHE_TIMEOUT = 4 * 60 * 60
 
@@ -168,10 +163,32 @@ def use_in_memory_data(data):
     
     # Count unique respondents (by id_no)
     unique_respondents = df['id_no'].nunique()
-    st.metric("Total Unique Respondents", unique_respondents)
+    st.metric("Total Respondents", unique_respondents)
     
-    # Count total question-answers
-    st.metric("Total Question-Answer Records", len(df))
+    # Add metrics for unique males and females
+    df['gender_clean'] = df['gender'].apply(
+        lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+    )
+    gender_counts_unique = df[['id_no', 'gender_clean']].drop_duplicates().gender_clean.value_counts()
+    
+    unique_males = gender_counts_unique.get('male', 0) + gender_counts_unique.get('Male', 0)
+    st.metric("Males", unique_males)
+    
+    unique_females = gender_counts_unique.get('female', 0) + gender_counts_unique.get('Female', 0)
+    st.metric("Females", unique_females)
+    
+    with col3:
+        # Calculate average age
+        # First ensure age column exists by calculating from date of birth
+        if 'age' not in df.columns:
+            df['age'] = pd.to_datetime(df['date_of_birth']).dt.tz_localize(None).apply(
+                lambda x: (datetime.now() - x).days // 365
+            )
+        
+        # Get unique respondents with their ages
+        age_df = df[['id_no', 'age']].drop_duplicates()
+        avg_age = round(age_df['age'].mean(), 1)  # Round to 1 decimal place
+        st.metric("Average Age", avg_age)
     
     # Gender distribution
     st.subheader("Gender Distribution")
@@ -203,36 +220,67 @@ def use_in_memory_data(data):
     # Get unique questions
     questions = df['question_id'].unique()
     
-    # Let user select a question to analyze
-    selected_question = st.selectbox("Select a question to analyze:", questions)
+    # Create database URL from secrets
+    db_url = f"postgresql://{st.secrets['POSTGRES_USER']}:{st.secrets['POSTGRES_PASSWORD']}@{st.secrets['POSTGRES_HOST']}:{st.secrets['POSTGRES_PORT']}/{st.secrets['POSTGRES_DB']}"
+        
+    # Create SQLAlchemy engine
+    engine = create_engine(db_url)
     
-    if selected_question:
-        # Filter data for selected question
-        question_data = df[df['question_id'] == selected_question]
+    # Loop through all questions and display their analysis
+    for question_id in questions:
+        # Create a section for each question
+        st.markdown(f"### Question: {question_id}")
+        
+        # Run a specific query for the current question
+        with engine.connect() as conn:
+            question_query = text("""
+                SELECT * FROM questionnaire_responses
+                WHERE question_id = :question_id
+            """)
+            
+            question_result = conn.execute(question_query, {"question_id": question_id})
+            
+            # Convert to DataFrame properly - same approach as above
+            try:
+                # Try using _mapping attribute
+                question_rows = [dict(row._mapping) for row in question_result]
+            except AttributeError:
+                # Fall back to older approach
+                column_names = question_result.keys()
+                question_rows = [dict(zip(column_names, row)) for row in question_result]
+            
+            question_data = pd.DataFrame(question_rows) if question_rows else pd.DataFrame()
         
         # Display answer distribution
-        st.write(f"Answer distribution for question: {selected_question}")
+        st.write(f"Answer distribution:")
         answer_counts = question_data['answer'].value_counts()
         st.bar_chart(answer_counts)
         
-        # Show answers by gender
-        st.write("Answers by gender:")
-        gender_answer = pd.crosstab(question_data['answer'], question_data['gender'])
+        # Create two columns for gender and location breakdowns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Show answers by gender
+            st.write("Answers by gender:")
+            # Handle empty gender values by replacing them with 'Not Specified'
+            question_data['gender_clean'] = question_data['gender'].apply(
+                lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+            )
+            gender_answer = pd.crosstab(question_data['answer'], question_data['gender_clean'])
         st.bar_chart(gender_answer)
         
-        # Raw data view
-        st.subheader("Raw Data Sample")
-        st.dataframe(question_data.head(10))
-    
-    # Option to download transformed data
-    st.subheader("Export Data")
-    csv = df.to_csv(index=False)
-    st.download_button(
-        label="Download in-memory data as CSV",
-        data=csv,
-        file_name="in_memory_questionnaire_data.csv",
-        mime="text/csv"
-    )
+        with col2:
+            # Show answers by location
+            st.write("Answers by location:")
+            # Handle empty location values similarly
+            question_data['location_clean'] = question_data['location'].apply(
+                lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+            )
+            location_answer = pd.crosstab(question_data['answer'], question_data['location_clean'])
+            st.bar_chart(location_answer)
+        
+        # Add a divider between questions
+        st.markdown("---")
 
 def display_vizualizations(data=None, count_result=None):
     """Display visualizations based on database query results"""
@@ -299,13 +347,37 @@ def display_vizualizations(data=None, count_result=None):
             with col1:
                 # Count unique respondents (by id_no)
                 unique_respondents = df['id_no'].nunique()
-                st.metric("Total Unique Respondents", unique_respondents)
-            
-            with col2:
-                # Count total question-answers
-                st.metric("Total Question-Answer Records", len(df))
+                st.metric("Total Respondents", unique_respondents)
             
             col1, col2, col3 = st.columns(3)
+
+            with col1:
+                # Count unique males
+                df['gender_clean'] = df['gender'].apply(
+                    lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+                )
+                gender_counts_unique = df[['id_no', 'gender_clean']].drop_duplicates().gender_clean.value_counts()
+                
+                unique_males = gender_counts_unique.get('male', 0) + gender_counts_unique.get('Male', 0)
+                st.metric("Males", unique_males)
+            
+            with col2:
+                # Count unique females
+                unique_females = gender_counts_unique.get('female', 0) + gender_counts_unique.get('Female', 0)
+                st.metric("Females", unique_females)
+            
+            with col3:
+                # Calculate average age
+                # First ensure age column exists by calculating from date of birth
+                if 'age' not in df.columns:
+                    df['age'] = pd.to_datetime(df['date_of_birth']).dt.tz_localize(None).apply(
+                        lambda x: (datetime.now() - x).days // 365
+                    )
+                
+                # Get unique respondents with their ages
+                age_df = df[['id_no', 'age']].drop_duplicates()
+                avg_age = round(age_df['age'].mean(), 1)  # Round to 1 decimal place
+                st.metric("Average Age", avg_age)
 
             with col1:
                 # Gender distribution
@@ -419,24 +491,25 @@ def display_vizualizations(data=None, count_result=None):
             # Get unique questions
             questions = df['question_id'].unique()
             
-            # Let user select a question to analyze
-            selected_question = st.selectbox("Select a question to analyze:", questions)
-            
-            if selected_question:
-                # Create database URL from secrets
-                db_url = f"postgresql://{st.secrets['POSTGRES_USER']}:{st.secrets['POSTGRES_PASSWORD']}@{st.secrets['POSTGRES_HOST']}:{st.secrets['POSTGRES_PORT']}/{st.secrets['POSTGRES_DB']}"
-                    
-                # Create SQLAlchemy engine
-                engine = create_engine(db_url)
+            # Create database URL from secrets
+            db_url = f"postgresql://{st.secrets['POSTGRES_USER']}:{st.secrets['POSTGRES_PASSWORD']}@{st.secrets['POSTGRES_HOST']}:{st.secrets['POSTGRES_PORT']}/{st.secrets['POSTGRES_DB']}"
+                
+            # Create SQLAlchemy engine
+            engine = create_engine(db_url)
 
-                # Run a specific query for the selected question
+            # Loop through all questions and display their analysis
+            for question_id in questions:
+                # Create a section for each question
+                st.markdown(f"### Question: {question_id}")
+                
+                # Run a specific query for the current question
                 with engine.connect() as conn:
                     question_query = text("""
                         SELECT * FROM questionnaire_responses
                         WHERE question_id = :question_id
                     """)
                     
-                    question_result = conn.execute(question_query, {"question_id": selected_question})
+                    question_result = conn.execute(question_query, {"question_id": question_id})
                     
                     # Convert to DataFrame properly - same approach as above
                     try:
@@ -450,63 +523,36 @@ def display_vizualizations(data=None, count_result=None):
                     question_data = pd.DataFrame(question_rows) if question_rows else pd.DataFrame()
                 
                 # Display answer distribution
-                st.write(f"Answer distribution for question: {selected_question}")
+                st.write(f"Answer distribution:")
                 answer_counts = question_data['answer'].value_counts()
                 st.bar_chart(answer_counts)
                 
+                # Create two columns for gender and location breakdowns
+                col1, col2 = st.columns(2)
+                
+                with col1:
                 # Show answers by gender
-                st.write("Answers by gender:")
-                gender_answer = pd.crosstab(question_data['answer'], question_data['gender'])
+                    st.write("Answers by gender:")
+                    # Handle empty gender values by replacing them with 'Not Specified'
+                    question_data['gender_clean'] = question_data['gender'].apply(
+                        lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+                    )
+                    gender_answer = pd.crosstab(question_data['answer'], question_data['gender_clean'])
                 st.bar_chart(gender_answer)
 
-                 # Show answers by location
-                st.write("Answers by location:")
-                location_answer = pd.crosstab(question_data['answer'], question_data['location'])
+                with col2:
+                    # Show answers by location
+                    st.write("Answers by location:")
+                    # Handle empty location values similarly
+                    question_data['location_clean'] = question_data['location'].apply(
+                        lambda x: 'Not Specified' if pd.isna(x) or x == '' else x
+                    )
+                    location_answer = pd.crosstab(question_data['answer'], question_data['location_clean'])
                 st.bar_chart(location_answer)
                 
-                # Raw data view
-                # st.subheader("Database Records Sample")
-                # st.dataframe(question_data.head(10))
-            
-            # Add database query performance metrics
-            st.subheader("Database Statistics")
-            
-            # Get count of records by date
-            with engine.connect() as conn:
-                date_query = text("""
-                    SELECT DATE(created_at) as date, COUNT(*) as count
-                    FROM questionnaire_responses
-                    GROUP BY DATE(created_at)
-                    ORDER BY date DESC
-                """)
-                
-                date_result = conn.execute(date_query)
-                
-                # Convert to DataFrame properly - same approach as above
-                try:
-                    # Try using _mapping attribute
-                    date_rows = [dict(row._mapping) for row in date_result]
-                except AttributeError:
-                    # Fall back to older approach
-                    column_names = date_result.keys()
-                    date_rows = [dict(zip(column_names, row)) for row in date_result]
-                
-                date_df = pd.DataFrame(date_rows) if date_rows else pd.DataFrame()
-                
-                if not date_df.empty:
-                    st.write("Records by date:")
-                    st.bar_chart(date_df.set_index('date'))
-            
-            # Option to download data from database
-            st.subheader("Export Database Data")
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="Download database records as CSV",
-                data=csv,
-                file_name="questionnaire_responses_db.csv",
-                mime="text/csv"
-            )
-        
+                # Add a divider between questions
+                st.markdown("---")
+                 
     except Exception as e:
         import traceback
         st.warning(f"Failed to query database for visualization: {str(e)}")
