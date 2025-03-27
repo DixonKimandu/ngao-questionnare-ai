@@ -628,24 +628,32 @@ def generate_and_get_report():
         from agents.general_analysis_agent import GeneralAnalysisWorkflow
         from datetime import datetime
         import os
+        import traceback
         
+        # Add debug output
+        # st.info(f"Starting report generation for submodule: {SUBMODULE_ID}")
         
-        # Create workflow instance
-        workflow = GeneralAnalysisWorkflow(
-            name="General Analysis",
-            description="An agent that can analyze data and provide insights",
-            session_id=f"polls-analysis-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            debug_mode=True,
-        )
+        # Create workflow without passing most parameters to avoid initialization error
+        workflow = GeneralAnalysisWorkflow()
+        
+        # Set attributes directly after initialization
+        workflow.name = "General Analysis"
+        workflow.description = "An agent that can analyze data and provide insights"
+        workflow.session_id = f"polls-analysis-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        workflow.debug_mode = True
+        workflow.submodule_id = SUBMODULE_ID
         
         # Run workflow and collect response
+        # st.info("Executing workflow...")
         response = None
         for r in workflow.run():
             response = r
-            
+        
         # Get the path to the latest report file
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         reports_dir = os.path.join(project_root, "reports")
+        
+        # st.info(f"Looking for reports in: {reports_dir}")
         
         if not os.path.exists(reports_dir):
             st.error("Reports directory not found")
@@ -661,12 +669,15 @@ def generate_and_get_report():
         pdf_files.sort(key=lambda x: os.path.getctime(os.path.join(reports_dir, x)), reverse=True)
         latest_pdf = os.path.join(reports_dir, pdf_files[0])
         
+        # st.info(f"Found latest report: {latest_pdf}")
+        
         # Read and return the PDF content
         with open(latest_pdf, 'rb') as file:
             return file.read()
             
     except Exception as e:
         st.error(f"Error generating report: {str(e)}")
+        st.error(traceback.format_exc())  # Add detailed traceback
         return None
 
 def main():

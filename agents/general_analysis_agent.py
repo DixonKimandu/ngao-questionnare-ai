@@ -44,30 +44,26 @@ class GeneralAnalysisWorkflow(Workflow):
             "Use statistical reasoning where appropriate to support your analysis.",
             "Focus on meaningful patterns rather than random variations in the data.",
             "",
-            "IMPORTANT: The IPRS (Integrated Population Registration System) data contains official biographical",
-            "information like date of birth, gender, and location information. This data is stored in the 'iprs'",
-            "property within the 'user' object. Always prioritize IPRS data when available as it's the most",
-            "reliable source of demographic information.",
+            "IMPORTANT: The demographic data is available in every record as gender, location and date_of_birth.",
             "",
-            "For age analysis, look for date_of_birth in IPRS data, with segments typically including:",
+            "For age analysis, look for date_of_birth field with segments typically including:",
             "- under_18",
-            "- 18-24",
-            "- 25-34",
-            "- 35-44",
-            "- 45-54",
-            "- 55+",
+            "- 18-35",
+            "- 36-65",
+            "- 66+",
             "",
-            "For gender analysis, look for gender in IPRS data, with segments typically including:",
+            "For gender analysis, look for gender field with segments typically including:",
             "- male",
             "- female",
             "- other",
             "",
-            "For location analysis, look for these fields in IPRS data (in order of priority):",
-            "- county_of_birth",
-            "- district_of_birth",
-            "- division_of_birth",
-            "- location_of_birth",
-            "- nationality"
+            "For location analysis, look for the location field with segments typically including:",
+            "- Nairobi",
+            "- Mombasa",
+            "- Kisumu",
+            "- Nakuru",
+            "- Eldoret",
+            "- Other",
         ],
         add_history_to_messages=True,
         markdown=True,
@@ -80,20 +76,32 @@ class GeneralAnalysisWorkflow(Workflow):
         instructions=[
             "You are an agent responsible for generating insights from analyzed questionnaire data in Kenya.",
             "You will be provided with analysis results broken down by demographic categories.",
-            "Synthesize the analysis into clear, actionable insights.",
-            "Identify the most significant trends and patterns across all demographic segments.",
-            "Highlight unexpected or counterintuitive findings that merit further investigation.",
-            "Present your insights in a structured, easy-to-understand format.",
-            "Ensure your insights are supported by the data and avoid overinterpreting minor variations.",
+            "You MUST follow this exact format for your report:",
             "",
-            "IMPORTANT: The IPRS (Integrated Population Registration System) data contains official biographical",
-            "information like date of birth, gender, and location information. This data is stored in the 'iprs'",
-            "property within the 'user' object. This is the most reliable source of demographic information.",
+            "# Analysis",
+            "## Key Insights from Questionnaire Analysis",
+            "## Demographic Analysis",
+            "### Age Distribution Analysis",
+            "- [List bullet points about age distribution insights]",
+            "### Gender Distribution Analysis",
+            "- [List bullet points about gender distribution insights]",
+            "### Location Distribution Analysis",
+            "- [List bullet points about location distribution insights]",
+            "## Recommendations",
+            "1. [First recommendation]",
+            "2. [Second recommendation]",
+            "## Sentiment Analysis",
+            "- [List bullet points about sentiment analysis insights]",
+            "- [Give a summary on whether the sentiment is positive, negative or neutral]",
+            "## Limitations",
+            "[Paragraph about limitations]",
+            "",
+            "IMPORTANT: The demographic data is available in every record as gender, location and date_of_birth.",
             "",
             "When analyzing patterns in the data, consider:",
-            "1. Age differences from IPRS date_of_birth",
-            "2. Gender differences from IPRS gender field",
-            "3. Geographic differences from IPRS location fields (county_of_birth, district_of_birth)",
+            "1. Age differences from date_of_birth",
+            "2. Gender differences from gender field",
+            "3. Geographic differences from location field",
             "4. How these demographics might influence people's responses and opinions"
         ],
         add_history_to_messages=True,
@@ -110,6 +118,18 @@ class GeneralAnalysisWorkflow(Workflow):
         debug_mode=False,
     )
 
+    def __init__(self, **kwargs):
+        """Initialize the workflow with optional parameters"""
+        # Call the parent's __init__ without arguments
+        super().__init__()
+        
+        # Set attributes from kwargs with defaults
+        self.name = kwargs.get('name', "General Analysis")
+        self.description = kwargs.get('description', "An agent that can analyze data and provide insights")
+        self.session_id = kwargs.get('session_id', f"polls-analysis-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        self.debug_mode = kwargs.get('debug_mode', False)
+        self.submodule_id = kwargs.get('submodule_id', None)
+
     def fetch_data(self):
         # Create database URL from secrets
         db_url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
@@ -119,8 +139,15 @@ class GeneralAnalysisWorkflow(Workflow):
 
         # Get all the data from the database
         with engine.connect() as conn:
-            query = text("SELECT * FROM questionnaire_responses")
-            results = conn.execute(query).fetchall()
+            # Add filter for submodule_id if provided
+            if self.submodule_id:
+                # Modify your query to filter by submodule_id
+                query = text("SELECT * FROM questionnaire_responses WHERE sub_module_id = :submodule_id")
+                results = conn.execute(query, {"submodule_id": self.submodule_id}).fetchall()
+            else:
+                # Original query without filter
+                query = text("SELECT * FROM questionnaire_responses")
+                results = conn.execute(query).fetchall()
 
         return results
     
@@ -286,7 +313,23 @@ class GeneralAnalysisWorkflow(Workflow):
         
         agent_input = {
             "analysis_results": [result.dict() for result in self.analysis_results],
-            "total_responses": len(data)
+            "total_responses": len(data),
+            "required_format": """
+                # Analysis
+                ## Key Insights from Questionnaire Analysis
+                ## Demographic Analysis
+                ### Age Distribution Analysis
+                - [List bullet points about age distribution insights]
+                ### Gender Distribution Analysis
+                - [List bullet points about gender distribution insights]
+                ### Location Distribution Analysis
+                - [List bullet points about location distribution insights]
+                ## Recommendations
+                1. [First recommendation]
+                2. [Second recommendation]
+                ## Limitations
+                [Paragraph about limitations]
+            """
         }
         
         response = self.insights_agent.run(
@@ -691,12 +734,482 @@ class GeneralAnalysisWorkflow(Workflow):
                     
                     # Add a page break after the age visualization
                     flowables.append(PageBreak())
-                else:
-                    if 'age' in df.columns:
-                        print(f"Age column exists but contains no valid data: {df['age'].describe()}")
-                    else:
-                        print("No age column was created from date_of_birth")
                 
+                # 3. Questions Analysis Section - new addition for question_id based structure
+                # First group data by question_id to analyze questions
+                if 'question_id' in df.columns and 'answer' in df.columns:
+                    # Group data by question_id
+                    questions_data = df.groupby('question_id')
+                    
+                    # Add a section heading for Questions Analysis
+                    questions_heading = Paragraph("Questions Analysis", styles['Heading2'])
+                    flowables.append(questions_heading)
+                    flowables.append(Spacer(1, 12))
+                    
+                    # Get list of unique question IDs
+                    question_ids = df['question_id'].unique()
+                    
+                    # Process each question
+                    for q_id in question_ids[:15]:  # Limit to first 15 questions
+                        # Get data for this question
+                        q_data = df[df['question_id'] == q_id]
+                        
+                        # Skip if too few responses
+                        if len(q_data) < 5:
+                            continue
+                            
+                        # Get answers for this question
+                        answers = q_data['answer']
+                        
+                        # Handle list answers - if answers are in string representation of lists
+                        # First check if answers appear to be lists
+                        list_answers = False
+                        try:
+                            if answers.iloc[0] and (answers.iloc[0].startswith('[') or answers.iloc[0].startswith('{')):
+                                list_answers = True
+                                # Flatten list answers
+                                flattened_answers = []
+                                for ans in answers:
+                                    if ans and isinstance(ans, str):
+                                        try:
+                                            # Try to parse as JSON list
+                                            ans_list = json.loads(ans.replace("'", "\""))
+                                            if isinstance(ans_list, list):
+                                                flattened_answers.extend(ans_list)
+                                            elif isinstance(ans_list, dict):
+                                                flattened_answers.extend(ans_list.values())
+                                            else:
+                                                flattened_answers.append(str(ans))
+                                        except:
+                                            # If not valid JSON, add as is
+                                            flattened_answers.append(str(ans))
+                                    elif ans:
+                                        flattened_answers.append(str(ans))
+                                # Convert to Series for value_counts
+                                answers = pd.Series(flattened_answers)
+                        except (IndexError, AttributeError):
+                            # If there's an error, just use the answers as they are
+                            pass
+                        
+                        # Get response counts
+                        response_counts = answers.value_counts().nlargest(5)  # Top 5 answers
+                        
+                        # Skip if no valid responses
+                        if len(response_counts) == 0:
+                            continue
+                        
+                        # Get question title from the data if available
+                        # Try to extract the actual question text from the question_id
+                        # Many question IDs follow formats like "TOPIC: ACTUAL QUESTION" or similar
+                        q_title = q_id
+                        
+                        # Extract the actual question part if it follows common formats
+                        if ' - ' in q_id:
+                            # Format: "TOPIC - QUESTION"
+                            q_title = q_id.split(' - ', 1)[1]
+                        elif ':' in q_id:
+                            # Format: "TOPIC: QUESTION"
+                            q_title = q_id.split(':', 1)[1].strip()
+                        
+                        # Add question heading - just the question without any prefix
+                        q_heading = Paragraph(f"Question: {q_title}", styles['Heading3'])
+                        flowables.append(q_heading)
+                        
+                        # Create a mapping for answers to keep chart labels clean
+                        answer_map = {answer: f"Option {chr(65+i)}" for i, answer in enumerate(response_counts.index)}
+                        
+                        # 1. Create overall response chart - one chart per page
+                        plt.figure(figsize=(8, 6))
+                        
+                        # Map answers to labels for cleaner display
+                        chart_labels = [answer_map[answer] for answer in response_counts.index]
+                        
+                        # Create horizontal bar chart
+                        bars = plt.barh(chart_labels, response_counts.values, color='skyblue')
+                        plt.xlabel('Number of Responses')
+                        plt.ylabel('Response Option')
+                        plt.title(f'Top Responses')
+                        
+                        # Add value labels
+                        for bar in bars:
+                            width = bar.get_width()
+                            plt.text(width + 0.5, bar.get_y() + bar.get_height()/2, 
+                                    f'{width}', ha='left', va='center')
+                        
+                        plt.tight_layout()
+                        
+                        # Save chart to temp file
+                        temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                        temp_file_name = temp_file.name
+                        temp_files.append(temp_file_name)
+                        plt.savefig(temp_file_name, format='png', dpi=150)
+                        plt.close()
+                        temp_file.close()
+                        
+                        # Add chart to PDF with its own heading and table on the same page
+                        flowables.append(Paragraph("Overall Responses", styles['Heading4']))
+                        img = Image(temp_file_name, width=450, height=300)
+                        flowables.append(img)
+                        flowables.append(Spacer(1, 12))
+                        
+                        # Create and add the legend table with clear formatting
+                        legend_data = [["Label", "Answer"]]
+                        for answer, label in answer_map.items():
+                            legend_data.append([label, str(answer)])
+                        
+                        # Fixed width columns for consistent appearance
+                        legend_table = Table(legend_data, colWidths=[80, 400])
+                        legend_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                            ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align label column
+                            ('ALIGN', (1, 0), (1, -1), 'LEFT'),  # Left align answer column
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                            ('WORDWRAP', (1, 1), (1, -1), True)  # Enable word wrapping for answers
+                        ]))
+                        flowables.append(legend_table)
+                        
+                        # Add page break after this chart and its legend, only if we have more sections coming
+                        has_gender_section = 'gender' in df.columns and df['gender'].notna().sum() > 10
+                        has_age_section = 'age_group' in df.columns and df['age_group'].notna().sum() > 10
+                        has_location_section = 'location' in df.columns and df['location'].notna().sum() > 10
+                        
+                        if has_gender_section or has_age_section or has_location_section:
+                            flowables.append(PageBreak())
+                        
+                        # 2. By Gender (if gender data exists)
+                        if 'gender' in df.columns and df['gender'].notna().sum() > 10:
+                            try:
+                                # Get top gender categories
+                                top_genders = df['gender'].value_counts().nlargest(3).index
+                                
+                                # Get data for this question filtered by top genders
+                                gender_q_data = q_data[q_data['gender'].isin(top_genders)]
+                                
+                                # Prepare data for cross-tabulation
+                                # Create a temporary DataFrame with gender and answer
+                                gender_chart_data = []
+                                
+                                for _, row in gender_q_data.iterrows():
+                                    gender = row['gender']
+                                    answer = row['answer']
+                                    
+                                    # Handle list answers if needed
+                                    if list_answers and answer and isinstance(answer, str) and (answer.startswith('[') or answer.startswith('{')):
+                                        try:
+                                            ans_list = json.loads(answer.replace("'", "\""))
+                                            if isinstance(ans_list, list):
+                                                for a in ans_list:
+                                                    if a in response_counts.index:  # Only include top 5 answers
+                                                        gender_chart_data.append({'gender': gender, 'answer': a})
+                                            elif isinstance(ans_list, dict):
+                                                for a in ans_list.values():
+                                                    if a in response_counts.index:
+                                                        gender_chart_data.append({'gender': gender, 'answer': a})
+                                            else:
+                                                if answer in response_counts.index:
+                                                    gender_chart_data.append({'gender': gender, 'answer': answer})
+                                        except:
+                                            if answer in response_counts.index:
+                                                gender_chart_data.append({'gender': gender, 'answer': answer})
+                                    elif answer in response_counts.index:
+                                        gender_chart_data.append({'gender': gender, 'answer': answer})
+                                
+                                # Convert to DataFrame
+                                gender_df = pd.DataFrame(gender_chart_data)
+                                
+                                # Skip if no data after filtering
+                                if len(gender_df) == 0:
+                                    raise ValueError("No gender data for this question after filtering")
+                                
+                                # Create cross-tabulation
+                                gender_cross = pd.crosstab(gender_df['gender'], gender_df['answer'])
+                                
+                                # Create grouped bar chart
+                                plt.figure(figsize=(10, 6))
+                                
+                                # Prepare data with mapped labels
+                                x = np.arange(len(top_genders))
+                                width = 0.15
+                                
+                                # Plot bars for each answer (up to 5)
+                                for i, answer in enumerate(response_counts.index):
+                                    if answer in gender_cross.columns:
+                                        gender_values = []
+                                        for gender in top_genders:
+                                            gender_values.append(gender_cross.at[gender, answer] if gender in gender_cross.index and answer in gender_cross.columns else 0)
+                                        
+                                        offset = width * (i - len(response_counts.index)/2 + 0.5)
+                                        plt.bar(x + offset, gender_values, width, 
+                                               label=answer_map[answer], 
+                                               color=plt.cm.tab10.colors[i % 10])
+                                
+                                plt.xlabel('Gender')
+                                plt.ylabel('Count')
+                                plt.title('Responses by Gender')
+                                plt.xticks(x, top_genders)
+                                plt.legend(title="Response Options")
+                                
+                                plt.tight_layout()
+                                
+                                # Save chart to temp file
+                                temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                                temp_file_name = temp_file.name
+                                temp_files.append(temp_file_name)
+                                plt.savefig(temp_file_name, format='png', dpi=150)
+                                plt.close()
+                                temp_file.close()
+                                
+                                # Add chart to PDF with its own heading and legend on the same page
+                                flowables.append(Paragraph("Responses by Gender", styles['Heading4']))
+                                img = Image(temp_file_name, width=450, height=300)
+                                flowables.append(img)
+                                flowables.append(Spacer(1, 12))
+                                
+                                # Create and add the legend table with the same format as above
+                                legend_table = Table(legend_data, colWidths=[80, 400])
+                                legend_table.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align label column
+                                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),  # Left align answer column
+                                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('WORDWRAP', (1, 1), (1, -1), True)
+                                ]))
+                                flowables.append(legend_table)
+                                
+                                # Add page break after this chart and its legend, only if we have more sections coming
+                                if has_age_section or has_location_section:
+                                    flowables.append(PageBreak())
+                                
+                            except Exception as e:
+                                print(f"Error creating gender chart for question {q_id}: {e}")
+                        
+                        # 3. By Age Group (if age_group exists and has enough data)
+                        if 'age_group' in df.columns and df['age_group'].notna().sum() > 10:
+                            try:
+                                # Get age groups with sufficient data
+                                valid_age_groups = df['age_group'].value_counts()
+                                valid_age_groups = valid_age_groups[valid_age_groups > 5].index
+                                
+                                # Same approach as gender analysis but for age groups
+                                age_chart_data = []
+                                age_q_data = q_data[q_data['age_group'].isin(valid_age_groups)]
+                                
+                                for _, row in age_q_data.iterrows():
+                                    age_group = row['age_group']
+                                    answer = row['answer']
+                                    
+                                    # Handle list answers if needed
+                                    if list_answers and answer and isinstance(answer, str) and (answer.startswith('[') or answer.startswith('{')):
+                                        try:
+                                            ans_list = json.loads(answer.replace("'", "\""))
+                                            if isinstance(ans_list, list):
+                                                for a in ans_list:
+                                                    if a in response_counts.index:
+                                                        age_chart_data.append({'age_group': age_group, 'answer': a})
+                                            elif isinstance(ans_list, dict):
+                                                for a in ans_list.values():
+                                                    if a in response_counts.index:
+                                                        age_chart_data.append({'age_group': age_group, 'answer': a})
+                                            else:
+                                                if answer in response_counts.index:
+                                                    age_chart_data.append({'age_group': age_group, 'answer': answer})
+                                        except:
+                                            if answer in response_counts.index:
+                                                age_chart_data.append({'age_group': age_group, 'answer': answer})
+                                    elif answer in response_counts.index:
+                                        age_chart_data.append({'age_group': age_group, 'answer': answer})
+                                
+                                # Convert to DataFrame
+                                age_df = pd.DataFrame(age_chart_data)
+                                
+                                # Skip if no data after filtering
+                                if len(age_df) == 0:
+                                    raise ValueError("No age data for this question after filtering")
+                                
+                                # Create cross-tabulation
+                                age_cross = pd.crosstab(age_df['age_group'], age_df['answer'])
+                                
+                                # Create grouped bar chart
+                                plt.figure(figsize=(10, 6))
+                                
+                                # Prepare data with mapped labels
+                                x = np.arange(len(valid_age_groups))
+                                width = 0.15
+                                
+                                # Plot bars for each answer (up to 5)
+                                for i, answer in enumerate(response_counts.index):
+                                    if answer in age_cross.columns:
+                                        age_values = []
+                                        for age_group in valid_age_groups:
+                                            age_values.append(age_cross.at[age_group, answer] if age_group in age_cross.index and answer in age_cross.columns else 0)
+                                        
+                                        offset = width * (i - len(response_counts.index)/2 + 0.5)
+                                        plt.bar(x + offset, age_values, width, 
+                                               label=answer_map[answer], 
+                                               color=plt.cm.tab10.colors[i % 10])
+                                
+                                plt.xlabel('Age Group')
+                                plt.ylabel('Count')
+                                plt.title('Responses by Age Group')
+                                plt.xticks(x, valid_age_groups)
+                                plt.legend(title="Response Options")
+                                
+                                plt.tight_layout()
+                                
+                                # Save chart to temp file
+                                temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                                temp_file_name = temp_file.name
+                                temp_files.append(temp_file_name)
+                                plt.savefig(temp_file_name, format='png', dpi=150)
+                                plt.close()
+                                temp_file.close()
+                                
+                                # Add chart to PDF with its own heading and legend on the same page
+                                flowables.append(Paragraph("Responses by Age Group", styles['Heading4']))
+                                img = Image(temp_file_name, width=450, height=300)
+                                flowables.append(img)
+                                flowables.append(Spacer(1, 12))
+                                
+                                # Create and add the legend table with the same format as above
+                                legend_table = Table(legend_data, colWidths=[80, 400])
+                                legend_table.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align label column
+                                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),  # Left align answer column
+                                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('WORDWRAP', (1, 1), (1, -1), True)
+                                ]))
+                                flowables.append(legend_table)
+                                
+                                # Add page break after this chart and its legend, only if we have more sections coming
+                                if has_location_section:
+                                    flowables.append(PageBreak())
+                                
+                            except Exception as e:
+                                print(f"Error creating age group chart for question {q_id}: {e}")
+                        
+                        # 4. By Location (if location data exists)
+                        if 'location' in df.columns and df['location'].notna().sum() > 10:
+                            try:
+                                # Get top locations
+                                top_locations = df['location'].value_counts().nlargest(5).index
+                                
+                                # Same approach as gender analysis but for locations
+                                location_chart_data = []
+                                location_q_data = q_data[q_data['location'].isin(top_locations)]
+                                
+                                for _, row in location_q_data.iterrows():
+                                    location = row['location']
+                                    answer = row['answer']
+                                    
+                                    # Handle list answers if needed
+                                    if list_answers and answer and isinstance(answer, str) and (answer.startswith('[') or answer.startswith('{')):
+                                        try:
+                                            ans_list = json.loads(answer.replace("'", "\""))
+                                            if isinstance(ans_list, list):
+                                                for a in ans_list:
+                                                    if a in response_counts.index:
+                                                        location_chart_data.append({'location': location, 'answer': a})
+                                            elif isinstance(ans_list, dict):
+                                                for a in ans_list.values():
+                                                    if a in response_counts.index:
+                                                        location_chart_data.append({'location': location, 'answer': a})
+                                            else:
+                                                if answer in response_counts.index:
+                                                    location_chart_data.append({'location': location, 'answer': answer})
+                                        except:
+                                            if answer in response_counts.index:
+                                                location_chart_data.append({'location': location, 'answer': answer})
+                                    elif answer in response_counts.index:
+                                        location_chart_data.append({'location': location, 'answer': answer})
+                                
+                                # Convert to DataFrame
+                                location_df = pd.DataFrame(location_chart_data)
+                                
+                                # Skip if no data after filtering
+                                if len(location_df) == 0:
+                                    raise ValueError("No location data for this question after filtering")
+                                
+                                # Create cross-tabulation
+                                location_cross = pd.crosstab(location_df['location'], location_df['answer'])
+                                
+                                # Create grouped bar chart
+                                plt.figure(figsize=(12, 7))
+                                
+                                # Prepare data with mapped labels
+                                x = np.arange(len(top_locations))
+                                width = 0.15
+                                
+                                # Plot bars for each answer (up to 5)
+                                for i, answer in enumerate(response_counts.index):
+                                    if answer in location_cross.columns:
+                                        location_values = []
+                                        for location in top_locations:
+                                            location_values.append(location_cross.at[location, answer] if location in location_cross.index and answer in location_cross.columns else 0)
+                                        
+                                        offset = width * (i - len(response_counts.index)/2 + 0.5)
+                                        plt.bar(x + offset, location_values, width, 
+                                               label=answer_map[answer], 
+                                               color=plt.cm.tab10.colors[i % 10])
+                                
+                                plt.xlabel('Location')
+                                plt.ylabel('Count')
+                                plt.title('Responses by Location')
+                                plt.xticks(x, top_locations, rotation=45, ha='right')
+                                plt.legend(title="Response Options")
+                                
+                                plt.tight_layout()
+                                
+                                # Save chart to temp file
+                                temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                                temp_file_name = temp_file.name
+                                temp_files.append(temp_file_name)
+                                plt.savefig(temp_file_name, format='png', dpi=150, bbox_inches='tight')
+                                plt.close()
+                                temp_file.close()
+                                
+                                # Add chart to PDF with its own heading and legend on the same page
+                                flowables.append(Paragraph("Responses by Location", styles['Heading4']))
+                                img = Image(temp_file_name, width=450, height=300)
+                                flowables.append(img)
+                                flowables.append(Spacer(1, 12))
+                                
+                                # Create and add the legend table with the same format as above
+                                legend_table = Table(legend_data, colWidths=[80, 400])
+                                legend_table.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align label column
+                                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),  # Left align answer column
+                                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                    ('WORDWRAP', (1, 1), (1, -1), True)
+                                ]))
+                                flowables.append(legend_table)
+                                
+                                # Don't add page break after the last chart's legend
+                                # (will add page break after the entire question instead)
+                                
+                            except Exception as e:
+                                print(f"Error creating location chart for question {q_id}: {e}")
+                        
+                        # Add page break to move to the next question
+                        flowables.append(PageBreak())
+                  
             except Exception as e:
                 # If anything goes wrong with data processing, print the error but continue
                 print(f"Error generating demographic visualizations: {e}")
@@ -705,21 +1218,41 @@ class GeneralAnalysisWorkflow(Workflow):
                 flowables.append(Spacer(1, 12))
                 flowables.append(PageBreak())
         
-        # Add the AI analysis section
-        analysis_heading = Paragraph("Analysis", styles['Heading2'])
-        flowables.append(analysis_heading)
-        flowables.append(Spacer(1, 12))
-        
-        # Check if final_response is a dictionary or RunResponse object
-        if hasattr(final_response, 'content'):
-            # It's a RunResponse object
-            content_text = final_response.content
-        elif isinstance(final_response, dict) and 'final_insights' in final_response:
-            # It's a dictionary with final_insights key
+        # Process the analysis content - ensure proper headings
+        if isinstance(final_response, dict) and 'final_insights' in final_response:
             content_text = final_response.get('final_insights', '')
         else:
-            # Fallback for other dictionary formats
             content_text = str(final_response)
+        
+        # If content doesn't start with "Analysis" heading, add it
+        if not content_text.startswith("# Analysis"):
+            content_text = "# Analysis\n" + content_text
+        
+        # Ensure all required sections are present
+        required_sections = [
+            "# Analysis",
+            "## Key Insights from Questionnaire Analysis",
+            "## Demographic Analysis",
+            "### Age Distribution Analysis",
+            "### Gender Distribution Analysis", 
+            "### Location Distribution Analysis",
+            "## Recommendations",
+            "## Limitations"
+        ]
+        
+        # Check content for required sections and add any missing ones
+        content_lines = content_text.split('\n')
+        sections_present = {section: False for section in required_sections}
+        
+        for line in content_lines:
+            for section in required_sections:
+                if line.strip() == section:
+                    sections_present[section] = True
+        
+        # Add any missing sections at the end
+        for section, present in sections_present.items():
+            if not present:
+                content_text += f"\n{section}\n"
         
         # Split the content into paragraphs
         content_parts = content_text.split('\n')
@@ -760,7 +1293,7 @@ class GeneralAnalysisWorkflow(Workflow):
             # Create a list of dictionaries from row objects
             formatted_data = self.format_data(data)
 
-                        # Initialize results list
+            # Initialize results list
             self.analysis_results = []
             
             # Step 1: Categorize responses by demographics
@@ -863,3 +1396,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
