@@ -17,6 +17,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - app_network
 
   # Adminer for database management
   adminer:
@@ -27,6 +29,8 @@ services:
     depends_on:
       - postgres
     restart: unless-stopped
+    networks:
+      - app_network
 
   # Ollama server
   ollama:
@@ -41,6 +45,8 @@ services:
       - "11435:11434"
     restart: unless-stopped
     entrypoint: ["/bin/bash", "/init-ollama.sh"]
+    networks:
+      - app_network
 
   # Main Streamlit dashboard application
   dashboard:
@@ -67,6 +73,8 @@ services:
       - ollama
     restart: unless-stopped
     command: streamlit run questionnaire_analysis.py
+    networks:
+      - app_network
 
   # Background data fetcher service
   fetcher:
@@ -93,7 +101,13 @@ services:
       - postgres
     restart: unless-stopped
     command: python cron/fetch_cron.py
+    networks:
+      - app_network
 
 volumes:
   postgres_data:
   ollama_data: 
+
+networks:
+  app_network:
+    driver: bridge 
